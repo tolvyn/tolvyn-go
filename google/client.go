@@ -50,9 +50,7 @@ func NewClient(ctx context.Context, opts tolvyn.ClientOptions) (*Client, error) 
 // Required: TOLVYN_API_KEY
 // Optional: GOOGLE_API_KEY (for fail-open), TOLVYN_PROXY_URL
 func NewClientFromEnv(ctx context.Context) (*Client, error) {
-	return NewClient(ctx, tolvyn.ClientOptions{
-		FailOpen: true,
-	})
+	return NewClient(ctx, tolvyn.ClientOptions{})
 }
 
 // headerInjectTransport injects TOLVYN attribution headers on every request.

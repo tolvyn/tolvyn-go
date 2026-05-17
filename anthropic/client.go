@@ -23,14 +23,14 @@ type Client struct {
 // NewClient creates a new TOLVYN Anthropic client.
 // If TolvynAPIKey is empty, falls back to TOLVYN_API_KEY env var.
 // If ProviderAPIKey is empty, falls back to ANTHROPIC_API_KEY env var.
-// NOTE: FailOpen must be set explicitly to true to enable fail-open behavior.
+// Fail-open is enabled by default when ProviderAPIKey is set; set DisableFailOpen: true to disable.
 func NewClient(opts tolvyn.ClientOptions) *Client {
 	opts.Defaults("ANTHROPIC_API_KEY", defaultProxyURL)
 
 	headers := opts.TolvynHeaders()
 
 	var httpClient *http.Client
-	if opts.FailOpen && opts.ProviderAPIKey != "" {
+	if !opts.DisableFailOpen && opts.ProviderAPIKey != "" {
 		httpClient = &http.Client{
 			Transport: tolvyn.NewFailOpenTransport(
 				opts.ProxyURL,
@@ -66,11 +66,10 @@ func NewClient(opts tolvyn.ClientOptions) *Client {
 // NewClientFromEnv creates a client using only environment variables.
 // Required: TOLVYN_API_KEY
 // Optional: ANTHROPIC_API_KEY (for fail-open), TOLVYN_PROXY_URL
-// FailOpen is enabled by default when using this constructor.
+// Fail-open is enabled by default when ANTHROPIC_API_KEY is set.
 func NewClientFromEnv() *Client {
 	return NewClient(tolvyn.ClientOptions{
 		TolvynAPIKey:   os.Getenv("TOLVYN_API_KEY"),
 		ProviderAPIKey: os.Getenv("ANTHROPIC_API_KEY"),
-		FailOpen:       true,
 	})
 }

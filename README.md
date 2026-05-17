@@ -26,10 +26,9 @@ import (
 
 client := tolvynopenai.NewClient(tolvyn.ClientOptions{
     TolvynAPIKey:   "tlv_live_...",
-    ProviderAPIKey: "sk-...",     // for fail-open fallback
+    ProviderAPIKey: "sk-...",     // for fail-open fallback (enabled by default)
     Team:           "engineering",
     Service:        "chatbot-api",
-    FailOpen:       true,
 })
 
 // Use exactly like the official openai-go SDK
@@ -74,22 +73,27 @@ tolvyn.ClientOptions{
 }
 ```
 
-## Fail-open
+## Fail-Open Behavior
 
-If TOLVYN is unreachable, requests automatically retry directly against the provider.
-Set `ProviderAPIKey` and `FailOpen: true` to enable:
+By default, the Go SDK fails open: if TOLVYN's proxy is unreachable, requests automatically retry against the provider directly. This matches the Python and Node SDK defaults.
+
+Set `ProviderAPIKey` to enable fail-open fallback:
 
 ```go
-tolvyn.ClientOptions{
+client := openai.NewClient(tolvyn.ClientOptions{
     TolvynAPIKey:   "tlv_live_...",
-    ProviderAPIKey: "sk-...",   // required for fail-open
-    FailOpen:       true,       // must be set explicitly — zero value is false
-}
+    ProviderAPIKey: "sk-...",    // required — used as fallback when TOLVYN is unreachable
+})
 ```
 
-**Important:** Unlike the Python and Node.js SDKs, `FailOpen` defaults to `false` in Go
-(the zero value of `bool`). You must set `FailOpen: true` explicitly, or use
-`NewClientFromEnv()` which sets it for you.
+To disable fail-open and force all requests through TOLVYN (hard failure on TOLVYN outages):
+
+```go
+client := openai.NewClient(tolvyn.ClientOptions{
+    TolvynAPIKey:    "tlv_live_...",
+    DisableFailOpen: true,
+})
+```
 
 Fail-open triggers on: connection refused, timeout, DNS failure, HTTP 503.
 Fail-open does NOT trigger on: 4xx errors (auth failures, rate limits, bad requests).

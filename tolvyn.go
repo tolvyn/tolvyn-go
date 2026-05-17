@@ -40,10 +40,10 @@ type ClientOptions struct {
 	User        string // X-Tolvyn-User
 	EndCustomer string // X-Tolvyn-End-Customer
 
-	// FailOpen enables automatic fallback to provider direct if TOLVYN is unreachable.
-	// NOTE: zero value is false — you must set FailOpen: true to enable.
-	// Use NewClientFromEnv() for a client with FailOpen pre-set to true.
-	FailOpen bool
+	// DisableFailOpen disables automatic fallback to provider direct if TOLVYN is unreachable.
+	// Default (false) = fail-open enabled — matches Python and Node SDK defaults.
+	// Set to true to force all requests through TOLVYN (hard failure on TOLVYN outages).
+	DisableFailOpen bool
 
 	// ProviderAPIKey is the provider's API key used for fail-open fallback.
 	// Required for fail-open to work.
@@ -146,6 +146,9 @@ func NewFailOpenTransport(proxyURL, providerURL, providerAPIKey string, headers 
 		headers:        headers,
 	}
 }
+
+// BoolPtr returns a pointer to b. Useful in tests that need *bool fields.
+func BoolPtr(b bool) *bool { return &b }
 
 func (t *failOpenTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	// Clone request and inject TOLVYN headers.

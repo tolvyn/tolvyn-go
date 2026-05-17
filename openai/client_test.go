@@ -33,7 +33,7 @@ func TestHeaderInjection(t *testing.T) {
 		Agent:        "test-agent",
 		User:         "test-user",
 		EndCustomer:  "test-customer",
-		FailOpen:     false,
+		DisableFailOpen: true,
 	})
 
 	// Make a request to trigger header capture.
@@ -92,7 +92,7 @@ func TestAuthorizationHeader(t *testing.T) {
 	client := tolvynopenai.NewClient(tolvyn.ClientOptions{
 		TolvynAPIKey: "tlv_live_testkey123",
 		ProxyURL:     server.URL + "/",
-		FailOpen:     false,
+		DisableFailOpen: true,
 	})
 
 	ctx := context.Background()
