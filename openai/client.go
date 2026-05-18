@@ -12,7 +12,7 @@ import (
 )
 
 const defaultProxyURL = "https://proxy.tolvyn.io/v1/proxy/openai/"
-const providerDirectURL = "https://api.openai.com/"
+const providerDirectURL = "https://api.openai.com/v1/"
 
 // Client is a TOLVYN-wrapped OpenAI client.
 // Use it exactly as you would use openai.Client.

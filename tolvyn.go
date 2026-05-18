@@ -19,7 +19,7 @@ import (
 	"time"
 )
 
-const Version = "0.1.0"
+const Version = "0.1.2"
 
 // ClientOptions configures a TOLVYN SDK client.
 // All fields are optional except TolvynAPIKey (or TOLVYN_API_KEY env var).
@@ -146,9 +146,6 @@ func NewFailOpenTransport(proxyURL, providerURL, providerAPIKey string, headers 
 		headers:        headers,
 	}
 }
-
-// BoolPtr returns a pointer to b. Useful in tests that need *bool fields.
-func BoolPtr(b bool) *bool { return &b }
 
 func (t *failOpenTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	// Clone request and inject TOLVYN headers.
