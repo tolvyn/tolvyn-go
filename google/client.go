@@ -12,6 +12,7 @@ import (
 )
 
 const defaultProxyURL = "https://proxy.tolvyn.io/v1/proxy/google/"
+const providerDirectURL = "https://generativelanguage.googleapis.com/"
 
 // Client wraps the Google GenAI client with TOLVYN attribution headers.
 type Client struct {
@@ -27,11 +28,28 @@ func NewClient(ctx context.Context, opts tolvyn.ClientOptions) (*Client, error) 
 
 	headers := opts.TolvynHeaders()
 
-	httpClient := &http.Client{
-		Transport: &headerInjectTransport{
-			base:    http.DefaultTransport,
-			headers: headers,
-		},
+	// GO-02: wire fail-open transport for Google when ProviderAPIKey is set
+	// and DisableFailOpen is false (matching OpenAI/Anthropic semantics).
+	// The path-strip in tolvyn.NewFailOpenTransport handles /v1/proxy/google/
+	// removal; remaining path (e.g. /v1beta/models/...) is valid for
+	// generativelanguage.googleapis.com.
+	var httpClient *http.Client
+	if !opts.DisableFailOpen && opts.ProviderAPIKey != "" {
+		httpClient = &http.Client{
+			Transport: tolvyn.NewFailOpenTransport(
+				opts.ProxyURL,
+				providerDirectURL,
+				opts.ProviderAPIKey,
+				headers,
+			),
+		}
+	} else {
+		httpClient = &http.Client{
+			Transport: &headerInjectTransport{
+				base:    http.DefaultTransport,
+				headers: headers,
+			},
+		}
 	}
 
 	client, err := genai.NewClient(ctx,

@@ -13,13 +13,14 @@
 package tolvyn
 
 import (
+	"log"
 	"net/http"
 	"os"
 	"strings"
 	"time"
 )
 
-const Version = "0.1.2"
+const Version = "0.1.3"
 
 // ClientOptions configures a TOLVYN SDK client.
 // All fields are optional except TolvynAPIKey (or TOLVYN_API_KEY env var).
@@ -57,7 +58,10 @@ func (o *ClientOptions) Defaults(providerEnvKey, defaultProxyURL string) {
 		o.TolvynAPIKey = os.Getenv("TOLVYN_API_KEY")
 	}
 	if o.TolvynAPIKey == "" {
-		panic("tolvyn: TolvynAPIKey is required (or set TOLVYN_API_KEY env var)")
+		// GO-03: log.Fatal is more idiomatic Go than panic for misconfiguration.
+		// Still process-exit (NewClient signature is locked for backwards compat),
+		// but emits a clean error message without a stack trace.
+		log.Fatal("tolvyn: TolvynAPIKey is required (set TOLVYN_API_KEY env var)")
 	}
 	if o.ProxyURL == "" {
 		envURL := os.Getenv("TOLVYN_PROXY_URL")
