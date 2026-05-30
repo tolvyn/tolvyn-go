@@ -20,7 +20,7 @@ import (
 	"time"
 )
 
-const Version = "0.1.3"
+const Version = "0.1.4"
 
 // ClientOptions configures a TOLVYN SDK client.
 // All fields are optional except TolvynAPIKey (or TOLVYN_API_KEY env var).
