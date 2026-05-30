@@ -36,6 +36,7 @@ func NewClient(opts tolvyn.ClientOptions) *Client {
 				opts.ProxyURL,
 				providerDirectURL,
 				opts.ProviderAPIKey,
+				"anthropic",
 				headers,
 			),
 		}

@@ -134,12 +134,17 @@ type failOpenTransport struct {
 	tolvynProxyURL string
 	providerURL    string
 	providerAPIKey string
+	provider       string // "openai" | "anthropic" | "google" — selects fallback auth header
 	headers        map[string]string
 }
 
 // NewFailOpenTransport creates an http.RoundTripper that retries against the
 // provider directly if the TOLVYN proxy is unreachable.
-func NewFailOpenTransport(proxyURL, providerURL, providerAPIKey string, headers map[string]string) http.RoundTripper {
+//
+// provider selects the auth header used on the direct fallback request
+// ("openai" → Authorization: Bearer, "anthropic" → X-Api-Key,
+// "google" → X-Goog-Api-Key).
+func NewFailOpenTransport(proxyURL, providerURL, providerAPIKey, provider string, headers map[string]string) http.RoundTripper {
 	return &failOpenTransport{
 		base: &http.Transport{
 			ResponseHeaderTimeout: 30 * time.Second,
@@ -147,7 +152,38 @@ func NewFailOpenTransport(proxyURL, providerURL, providerAPIKey string, headers 
 		tolvynProxyURL: proxyURL,
 		providerURL:    providerURL,
 		providerAPIKey: providerAPIKey,
+		provider:       provider,
 		headers:        headers,
+	}
+}
+
+// providerAuthHeader maps a provider to the header its DIRECT API reads the API
+// key from. The TOLVYN proxy accepts Authorization/X-Api-Key/X-Goog-Api-Key
+// interchangeably, but the providers do NOT: Anthropic authenticates only via
+// X-Api-Key and Google only via X-Goog-Api-Key — sending Bearer to them 401s.
+var providerAuthHeader = map[string]string{
+	"openai":    "Authorization",
+	"anthropic": "X-Api-Key",
+	"google":    "X-Goog-Api-Key",
+}
+
+// applyFallbackAuth rewrites h in place for a direct provider call. It strips
+// every inbound auth header (each may carry the TOLVYN key) and sets the single
+// header the provider's direct API expects, with the provider's own key.
+// Fixes GO-08 (Bearer sent to Anthropic/Google → 401) and GO-09 (the TOLVYN key
+// in X-Api-Key/X-Goog-Api-Key leaking to the provider on fallback).
+func applyFallbackAuth(h http.Header, provider, providerKey string) {
+	h.Del("Authorization")
+	h.Del("X-Api-Key")
+	h.Del("X-Goog-Api-Key")
+	header := providerAuthHeader[strings.ToLower(provider)]
+	if header == "" {
+		header = "Authorization"
+	}
+	if header == "Authorization" {
+		h.Set("Authorization", "Bearer "+providerKey)
+	} else {
+		h.Set(header, providerKey)
 	}
 }
 
@@ -197,8 +233,11 @@ func (t *failOpenTransport) RoundTrip(req *http.Request) (*http.Response, error)
 		}
 	}
 
-	// Set provider API key and strip TOLVYN-specific headers.
-	fallbackReq.Header.Set("Authorization", "Bearer "+t.providerAPIKey)
+	// Provider-aware auth: strip every inbound auth header (the SDK may have set
+	// X-Api-Key/X-Goog-Api-Key carrying the TOLVYN key) and set the one the
+	// provider's direct API expects, with the provider key (GO-08 / GO-09).
+	applyFallbackAuth(fallbackReq.Header, t.provider, t.providerAPIKey)
+	// Strip TOLVYN attribution headers — they are meaningless to the provider.
 	for k := range t.headers {
 		if strings.HasPrefix(strings.ToLower(k), "x-tolvyn-") {
 			fallbackReq.Header.Del(k)

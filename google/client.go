@@ -40,6 +40,7 @@ func NewClient(ctx context.Context, opts tolvyn.ClientOptions) (*Client, error) 
 				opts.ProxyURL,
 				providerDirectURL,
 				opts.ProviderAPIKey,
+				"google",
 				headers,
 			),
 		}
