@@ -1,5 +1,3 @@
-//go:build ignore
-
 package main
 
 import (
@@ -18,7 +16,12 @@ func main() {
 		ProviderAPIKey: os.Getenv("ANTHROPIC_API_KEY"),
 		Team:           "engineering",
 		Service:        "example",
-		FailOpen:       true,
+		// FALLBACK IS ON BY DEFAULT. The option is DisableFailOpen, so the
+		// zero value enables it -- there is deliberately no field of the name
+		// this example used to set. It needs ProviderAPIKey above: without one
+		// there is no fallback and the request fails rather than going direct.
+		// Requests that DO go direct never reach TOLVYN, so they are NOT
+		// metered and will not appear in the customer's costs.
 	})
 
 	msg, err := client.Messages.New(context.Background(), sdk.MessageNewParams{

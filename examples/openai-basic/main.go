@@ -1,5 +1,3 @@
-//go:build ignore
-
 package main
 
 import (
@@ -17,11 +15,16 @@ func main() {
 		TolvynAPIKey:   os.Getenv("TOLVYN_API_KEY"),
 		ProviderAPIKey: os.Getenv("OPENAI_API_KEY"),
 		Team:           "engineering",
-		Service:        "streaming-example",
-		FailOpen:       true,
+		Service:        "example",
+		// FALLBACK IS ON BY DEFAULT. The option is DisableFailOpen, so the
+		// zero value enables it -- there is deliberately no field of the name
+		// this example used to set. It needs ProviderAPIKey above: without one
+		// there is no fallback and the request fails rather than going direct.
+		// Requests that DO go direct never reach TOLVYN, so they are NOT
+		// metered and will not appear in the customer's costs.
 	})
 
-	stream := client.Chat.Completions.NewStreaming(context.Background(),
+	resp, err := client.Chat.Completions.New(context.Background(),
 		oai.ChatCompletionNewParams{
 			Model: oai.F(oai.ChatModelGPT4oMini),
 			Messages: oai.F([]oai.ChatCompletionMessageParamUnion{
@@ -29,7 +32,7 @@ func main() {
 					Role: oai.F(oai.ChatCompletionUserMessageParamRoleUser),
 					Content: oai.F([]oai.ChatCompletionContentPartUnionParam{
 						oai.ChatCompletionContentPartTextParam{
-							Text: oai.F("Count to 5, one number per word."),
+							Text: oai.F("Say: TOLVYN Go SDK works!"),
 							Type: oai.F(oai.ChatCompletionContentPartTextTypeText),
 						},
 					}),
@@ -37,17 +40,10 @@ func main() {
 			}),
 		},
 	)
-
-	for stream.Next() {
-		chunk := stream.Current()
-		if len(chunk.Choices) > 0 {
-			fmt.Print(chunk.Choices[0].Delta.Content)
-		}
-	}
-	fmt.Println()
-
-	if err := stream.Err(); err != nil {
-		fmt.Printf("Stream error: %v\n", err)
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)
 	}
+
+	fmt.Println(resp.Choices[0].Message.Content)
 }
