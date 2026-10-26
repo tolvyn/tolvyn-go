@@ -13,14 +13,20 @@
 package tolvyn
 
 import (
+	"bytes"
+	"crypto/tls"
+	"crypto/x509"
+	"errors"
+	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"strings"
 	"time"
 )
 
-const Version = "0.1.4"
+const Version = "0.1.5"
 
 // ClientOptions configures a TOLVYN SDK client.
 // All fields are optional except TolvynAPIKey (or TOLVYN_API_KEY env var).
@@ -108,6 +114,12 @@ func (o *ClientOptions) TolvynHeaders() map[string]string {
 
 // IsProxyError returns true if the error indicates the TOLVYN proxy
 // is unreachable (not a provider-side error).
+//
+// Deprecated: the fail-open transport no longer uses this. Its substring match
+// ("timeout", "eof", "reset by peer") and its 503 rule also fire AFTER the proxy
+// forwarded the request, or on the provider's own 503 passed through, and a
+// direct retry then made a second, unmetered provider call. Kept for API
+// compatibility; see ProxyNotReached and IsTolvynUnavailable.
 func IsProxyError(err error, statusCode int) bool {
 	if err != nil {
 		msg := strings.ToLower(err.Error())
@@ -123,8 +135,53 @@ func IsProxyError(err error, statusCode int) bool {
 
 // ShouldNotFailOpen returns true for 4xx errors (except 503) —
 // these are real API errors, not proxy failures.
+//
+// Deprecated: the fail-open transport no longer uses this; it fails open only
+// when ProxyNotReached or IsTolvynUnavailable.
 func ShouldNotFailOpen(statusCode int) bool {
 	return statusCode >= 400 && statusCode < 500 && statusCode != 503
+}
+
+// TolvynUnavailableHeader marks a 503 as TOLVYN's own ("TOLVYN is unavailable")
+// rather than the provider's 503 passed through the proxy.
+const TolvynUnavailableHeader = "X-Tolvyn-Unavailable"
+
+// ProxyNotReached reports whether err shows the request never reached the
+// proxy: the dial failed (refused, unreachable, timeout while connecting), the
+// name did not resolve, or the TLS handshake failed. In each case nothing can
+// have been forwarded to the provider, so a direct retry cannot double-bill.
+//
+// Deliberately excluded: response-header timeouts, resets and EOF after the
+// request was written. Each can follow a forwarded request.
+func ProxyNotReached(err error) bool {
+	if err == nil {
+		return false
+	}
+	var opErr *net.OpError
+	if errors.As(err, &opErr) && opErr.Op == "dial" {
+		return true
+	}
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		return true
+	}
+	var (
+		recErr  tls.RecordHeaderError
+		verErr  *tls.CertificateVerificationError
+		authErr x509.UnknownAuthorityError
+		hostErr x509.HostnameError
+		invErr  x509.CertificateInvalidError
+	)
+	return errors.As(err, &recErr) || errors.As(err, &verErr) || errors.As(err, &authErr) ||
+		errors.As(err, &hostErr) || errors.As(err, &invErr)
+}
+
+// IsTolvynUnavailable reports whether resp is a 503 TOLVYN marked as its own.
+// A plain 503 on the proxy path is the provider's, passed through — the server
+// never writes 503 on /v1/proxy/ — and enforcement (451, 429) never fails open.
+func IsTolvynUnavailable(resp *http.Response) bool {
+	return resp != nil && resp.StatusCode == http.StatusServiceUnavailable &&
+		strings.TrimSpace(resp.Header.Get(TolvynUnavailableHeader)) == "1"
 }
 
 // failOpenTransport is an http.RoundTripper that retries against the
@@ -134,15 +191,16 @@ type failOpenTransport struct {
 	tolvynProxyURL string
 	providerURL    string
 	providerAPIKey string
-	provider       string // "openai" | "anthropic" | "google" — selects fallback auth header
+	provider       string // "openai" | "anthropic" | "google" | "deepseek" — selects fallback auth header
 	headers        map[string]string
 }
 
 // NewFailOpenTransport creates an http.RoundTripper that retries against the
-// provider directly if the TOLVYN proxy is unreachable.
+// provider directly only if the TOLVYN proxy was never reached, or answered 503
+// with X-Tolvyn-Unavailable: 1.
 //
 // provider selects the auth header used on the direct fallback request
-// ("openai" → Authorization: Bearer, "anthropic" → X-Api-Key,
+// ("openai"/"deepseek" → Authorization: Bearer, "anthropic" → X-Api-Key,
 // "google" → X-Goog-Api-Key).
 func NewFailOpenTransport(proxyURL, providerURL, providerAPIKey, provider string, headers map[string]string) http.RoundTripper {
 	return &failOpenTransport{
@@ -165,6 +223,17 @@ var providerAuthHeader = map[string]string{
 	"openai":    "Authorization",
 	"anthropic": "X-Api-Key",
 	"google":    "X-Goog-Api-Key",
+	"deepseek":  "Authorization", // OpenAI-compatible
+}
+
+// proxyPrefixes are stripped from the request path to build the direct URL.
+var proxyPrefixes = []string{"/v1/proxy/openai", "/v1/proxy/anthropic", "/v1/proxy/google", "/v1/proxy/deepseek"}
+
+// notForwarded are never copied onto the direct request: Host names the PROXY,
+// and the rest are recomputed or hop-by-hop.
+var notForwarded = map[string]bool{
+	"Host": true, "Content-Length": true, "Transfer-Encoding": true, "Connection": true,
+	"Keep-Alive": true, "Te": true, "Trailer": true, "Upgrade": true, "Proxy-Connection": true,
 }
 
 // applyFallbackAuth rewrites h in place for a direct provider call. It strips
@@ -187,62 +256,103 @@ func applyFallbackAuth(h http.Header, provider, providerKey string) {
 	}
 }
 
+// fallbackHeader is the direct request's header set: every X-Tolvyn-* header
+// is dropped, in any casing, whether set on the client or per request — they
+// carry attribution, and X-Tolvyn-User / X-Tolvyn-End-Customer can be personal
+// data — then auth is replaced with the provider's own key.
+func fallbackHeader(src http.Header, provider, providerKey string) http.Header {
+	out := make(http.Header, len(src))
+	for k, vs := range src {
+		if notForwarded[http.CanonicalHeaderKey(k)] || strings.HasPrefix(strings.ToLower(k), "x-tolvyn-") {
+			continue
+		}
+		out[k] = append([]string(nil), vs...)
+	}
+	applyFallbackAuth(out, provider, providerKey)
+	return out
+}
+
+// replayableBody returns a function that yields a fresh copy of req's body for
+// each attempt. The first attempt consumes req.Body, so the fallback used to go
+// out with an empty body and fail ("ContentLength=N with Body length 0").
+func replayableBody(req *http.Request) (func() (io.ReadCloser, error), error) {
+	if req.Body == nil || req.Body == http.NoBody {
+		return func() (io.ReadCloser, error) { return http.NoBody, nil }, nil
+	}
+	if req.GetBody != nil {
+		return req.GetBody, nil
+	}
+	b, err := io.ReadAll(req.Body)
+	req.Body.Close()
+	if err != nil {
+		return nil, err
+	}
+	return func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(b)), nil }, nil
+}
+
 func (t *failOpenTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	getBody, err := replayableBody(req)
+	if err != nil {
+		return nil, err
+	}
+
 	// Clone request and inject TOLVYN headers.
 	proxyReq := req.Clone(req.Context())
 	for k, v := range t.headers {
 		proxyReq.Header.Set(k, v)
 	}
+	if proxyReq.Body, err = getBody(); err != nil {
+		return nil, err
+	}
+	proxyReq.GetBody = getBody
 
 	resp, err := t.base.RoundTrip(proxyReq)
-
-	statusCode := 0
-	if resp != nil {
-		statusCode = resp.StatusCode
-	}
 
 	if t.providerAPIKey == "" {
 		return resp, err
 	}
-
-	if ShouldNotFailOpen(statusCode) {
-		// 4xx from provider — do not fail open.
-		return resp, err
-	}
-
-	if !IsProxyError(err, statusCode) {
-		// Not a proxy error — return as-is.
-		return resp, err
+	if err != nil {
+		if !ProxyNotReached(err) {
+			return resp, err
+		}
+	} else {
+		if !IsTolvynUnavailable(resp) {
+			return resp, nil
+		}
+		// Discard TOLVYN's 503 before going direct.
+		io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10)) //nolint:errcheck
+		resp.Body.Close()
 	}
 
 	// Fail open: retry directly against provider.
-	fallbackReq := req.Clone(req.Context())
-
+	target := req.URL.String()
 	if t.providerURL != "" {
 		path := req.URL.Path
-		for _, prefix := range []string{"/v1/proxy/openai", "/v1/proxy/anthropic", "/v1/proxy/google"} {
+		for _, prefix := range proxyPrefixes {
 			if strings.HasPrefix(path, prefix) {
 				path = path[len(prefix):]
 				break
 			}
 		}
-		fallbackURL := strings.TrimSuffix(t.providerURL, "/") + "/" + strings.TrimPrefix(path, "/")
-		parsed, parseErr := fallbackReq.URL.Parse(fallbackURL)
-		if parseErr == nil {
-			fallbackReq.URL = parsed
+		target = strings.TrimSuffix(t.providerURL, "/") + "/" + strings.TrimPrefix(path, "/")
+		if req.URL.RawQuery != "" {
+			target += "?" + req.URL.RawQuery
 		}
 	}
-
-	// Provider-aware auth: strip every inbound auth header (the SDK may have set
-	// X-Api-Key/X-Goog-Api-Key carrying the TOLVYN key) and set the one the
-	// provider's direct API expects, with the provider key (GO-08 / GO-09).
-	applyFallbackAuth(fallbackReq.Header, t.provider, t.providerAPIKey)
-	// Strip TOLVYN attribution headers — they are meaningless to the provider.
-	for k := range t.headers {
-		if strings.HasPrefix(strings.ToLower(k), "x-tolvyn-") {
-			fallbackReq.Header.Del(k)
-		}
+	body, err := getBody()
+	if err != nil {
+		return nil, err
 	}
+	// A NEW request, not a clone: a clone kept req.Host, which named the proxy.
+	fallbackReq, err := http.NewRequestWithContext(req.Context(), req.Method, target, body)
+	if err != nil {
+		body.Close()
+		return nil, err
+	}
+	fallbackReq.ContentLength = req.ContentLength
+	fallbackReq.GetBody = getBody
+	fallbackReq.Header = fallbackHeader(req.Header, t.provider, t.providerAPIKey)
 
+	log.Printf("TOLVYN proxy unreachable — routing direct to %s (fail-open)", t.provider)
 	return t.base.RoundTrip(fallbackReq)
 }
