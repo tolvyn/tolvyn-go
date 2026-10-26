@@ -13,6 +13,7 @@ Drop-in replacement for OpenAI, Anthropic, and Google Go SDKs. Routes through TO
 go get github.com/tolvyn/tolvyn-go/openai
 go get github.com/tolvyn/tolvyn-go/anthropic
 go get github.com/tolvyn/tolvyn-go/google
+go get github.com/tolvyn/tolvyn-go/deepseek
 ```
 
 ## Quick start
@@ -56,6 +57,7 @@ resp, err := client.Chat.Completions.New(ctx, oai.ChatCompletionNewParams{
 | `OPENAI_API_KEY` | For fail-open | OpenAI key used when TOLVYN is unreachable |
 | `ANTHROPIC_API_KEY` | For fail-open | Anthropic key used when TOLVYN is unreachable |
 | `GOOGLE_API_KEY` | For fail-open | Google key used when TOLVYN is unreachable |
+| `DEEPSEEK_API_KEY` | For fail-open | DeepSeek key used when TOLVYN is unreachable |
 | `TOLVYN_PROXY_URL` | No | Override proxy URL (default: https://proxy.tolvyn.io/v1/proxy/{provider}/) |
 
 ## Attribution headers
@@ -95,8 +97,17 @@ client := openai.NewClient(tolvyn.ClientOptions{
 })
 ```
 
-Fail-open triggers on: connection refused, timeout, DNS failure, HTTP 503.
-Fail-open does NOT trigger on: 4xx errors (auth failures, rate limits, bad requests).
+Fail-open triggers only when the request never reached TOLVYN: connection refused,
+DNS failure, a timeout while connecting, or a failed TLS handshake — or on an HTTP 503
+carrying `X-Tolvyn-Unavailable: 1`.
+
+Fail-open does NOT trigger on: 4xx errors (auth failures, budget and rate limits, kill
+switch, bad requests), a plain 503 (the provider's own, passed through), or a timeout
+or reset after the request was sent — TOLVYN may already have forwarded it, and a
+direct retry would be a second, unmetered provider call.
+
+The direct request never carries `X-Tolvyn-*` headers, whether set on the client or
+per request.
 
 ## Providers
 
@@ -105,6 +116,7 @@ Fail-open does NOT trigger on: 4xx errors (auth failures, rate limits, bad reque
 | OpenAI | `github.com/tolvyn/tolvyn-go/openai` | `github.com/openai/openai-go` |
 | Anthropic | `github.com/tolvyn/tolvyn-go/anthropic` | `github.com/anthropics/anthropic-sdk-go` |
 | Google | `github.com/tolvyn/tolvyn-go/google` | `github.com/google/generative-ai-go` |
+| DeepSeek | `github.com/tolvyn/tolvyn-go/deepseek` | `github.com/openai/openai-go` (OpenAI-compatible) |
 
 ## License
 
