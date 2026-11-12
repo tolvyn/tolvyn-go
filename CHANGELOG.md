@@ -22,17 +22,17 @@
 
 - Fail-open worked only when the connection was refused: on every other trigger
   the retry reused a body the first attempt had consumed and failed with
-  `ContentLength=N with Body length 0`. The body is now replayed. (BE-508)
+  `ContentLength=N with Body length 0`. The body is now replayed.
 - The direct request no longer carries any `X-Tolvyn-*` header. Client-level
   headers were already removed; **per-request headers were not** (`X-Tolvyn-User`
   and `X-Tolvyn-End-Customer` can be personal data). Reported by Maram Sai Harsha
-  Vardhan Reddy. (BE-507)
+  Vardhan Reddy.
 - The direct request now sends the provider's Host, not the proxy's, and keeps the
-  query string. (BE-511)
-- The discarded 503 response is drained and closed before the retry. (BE-514)
+  query string.
+- The discarded 503 response is drained and closed before the retry.
 
 ### Added
 
 - `deepseek` package (`github.com/tolvyn/tolvyn-go/deepseek`, OpenAI-compatible,
   `DEEPSEEK_API_KEY` for fail-open). DeepSeek fail-open previously went to
-  `/v1/v1/proxy/deepseek/...`. (BE-512)
+  `/v1/v1/proxy/deepseek/...`.

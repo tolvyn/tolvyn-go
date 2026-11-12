@@ -1,6 +1,6 @@
 # tolvyn-go
 
-Go SDK for [TOLVYN](https://tolvyn.io) — the financial control plane for AI infrastructure.
+Go SDK for [TOLVYN](https://tolvyn.io) — the control and evidence layer for AI spend.
 
 Drop-in replacement for OpenAI, Anthropic, and Google Go SDKs. Routes through TOLVYN for cost tracking, budget enforcement, and audit trails. Fails open automatically if TOLVYN is unreachable.
 
