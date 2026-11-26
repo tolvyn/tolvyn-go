@@ -9,6 +9,7 @@ import (
 	sdk "github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
 	tolvyn "github.com/tolvyn/tolvyn-go"
+	"github.com/tolvyn/tolvyn-go/internal/proxyurl"
 )
 
 const defaultProxyURL = "https://proxy.tolvyn.io/v1/proxy/anthropic/"
@@ -32,7 +33,7 @@ func NewClient(opts tolvyn.ClientOptions) *Client {
 	var httpClient *http.Client
 	if !opts.DisableFailOpen && opts.ProviderAPIKey != "" {
 		httpClient = &http.Client{
-			CheckRedirect: tolvyn.NoRedirect,
+			CheckRedirect: proxyurl.NoRedirect,
 			Transport: tolvyn.NewFailOpenTransport(
 				opts.ProxyURL,
 				providerDirectURL,
@@ -42,7 +43,7 @@ func NewClient(opts tolvyn.ClientOptions) *Client {
 			),
 		}
 	} else {
-		httpClient = &http.Client{Transport: tolvyn.NewProxyTransport(opts.ProxyURL, nil), CheckRedirect: tolvyn.NoRedirect}
+		httpClient = &http.Client{Transport: proxyurl.NewTransport(opts.ProxyURL, nil), CheckRedirect: proxyurl.NoRedirect}
 	}
 
 	anthropicOpts := []option.RequestOption{

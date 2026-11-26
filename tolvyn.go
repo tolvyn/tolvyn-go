@@ -17,16 +17,15 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
-	"fmt"
 	"io"
 	"log"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"strings"
-	"sync"
 	"time"
+
+	"github.com/tolvyn/tolvyn-go/internal/proxyurl"
 )
 
 const Version = "0.1.5"
@@ -86,7 +85,7 @@ func (o *ClientOptions) Defaults(providerEnvKey, defaultProxyURL string) {
 	}
 	// Logs a host other than TOLVYN's once; a URL that breaks the rule is refused by the transport (or by
 	// google.NewClient), since NewClient cannot return an error here.
-	_ = ValidateProxyURL(o.ProxyURL)
+	_ = proxyurl.Validate(o.ProxyURL)
 	if o.ProviderAPIKey == "" {
 		o.ProviderAPIKey = os.Getenv(providerEnvKey)
 	}
@@ -190,91 +189,6 @@ func IsTolvynUnavailable(resp *http.Response) bool {
 		strings.TrimSpace(resp.Header.Get(TolvynUnavailableHeader)) == "1"
 }
 
-const defaultProxyHost = "proxy.tolvyn.io"
-
-var warnedHosts sync.Map
-
-// ValidateProxyURL refuses a proxy URL that is not https, except http to this machine (localhost, 127.0.0.1, ::1):
-// anywhere else the TOLVYN key and the prompts would cross the network readable, and whoever is on the path could
-// forge TOLVYN's outage answer and send calls around TOLVYN. A URL naming a host other than TOLVYN's is logged once.
-func ValidateProxyURL(raw string) error {
-	u, err := url.Parse(raw)
-	if err != nil || u.Host == "" {
-		return fmt.Errorf("tolvyn: the proxy URL is not a valid URL: %s", shownURL(raw))
-	}
-	h := u.Hostname()
-	loopback := h == "localhost" || h == "127.0.0.1" || h == "::1"
-	if u.Scheme != "https" && !(u.Scheme == "http" && loopback) {
-		return fmt.Errorf("tolvyn: the proxy URL must start with https:// (http:// is accepted only for localhost): %s",
-			shownURL(raw))
-	}
-	if h != defaultProxyHost {
-		if _, seen := warnedHosts.LoadOrStore(h, true); !seen {
-			log.Printf("tolvyn: the proxy URL points at %s, not %s. Your TOLVYN key and your prompts are sent to %s.",
-				h, defaultProxyHost, h)
-		}
-	}
-	return nil
-}
-
-// shownURL is the URL as an error may show it: no user info, no query, no fragment.
-func shownURL(raw string) string {
-	u, err := url.Parse(raw)
-	if err != nil {
-		return "(not a URL)"
-	}
-	u.User, u.RawQuery, u.Fragment = nil, "", ""
-	return u.String()
-}
-
-// NoRedirect is the CheckRedirect of every client the SDK builds: a redirect is an error, so no key follows it to
-// another address. Go drops Authorization on a hop to another host, but not X-Api-Key or X-Goog-Api-Key, and the
-// transports would set TOLVYN headers again on the next hop. TOLVYN's proxy and the providers' APIs do not redirect.
-func NoRedirect(req *http.Request, _ []*http.Request) error {
-	return fmt.Errorf("tolvyn: a redirect to %s was not followed, so no key was sent there", req.URL.Host)
-}
-
-// hostOf is the host[:port] of a URL, or "" when it does not parse.
-func hostOf(raw string) string {
-	u, err := url.Parse(raw)
-	if err != nil {
-		return ""
-	}
-	return u.Host
-}
-
-// proxyTransport is the transport when fail-open is off: it refuses a proxy URL that breaks the rule, and sets TOLVYN
-// headers only on requests to the proxy's host.
-type proxyTransport struct {
-	base      http.RoundTripper
-	proxyHost string
-	proxyErr  error
-	headers   map[string]string
-}
-
-// NewProxyTransport returns the transport for a client with fail-open off.
-func NewProxyTransport(proxyURL string, headers map[string]string) http.RoundTripper {
-	return &proxyTransport{base: http.DefaultTransport, proxyHost: hostOf(proxyURL), proxyErr: ValidateProxyURL(proxyURL),
-		headers: headers}
-}
-
-func (t *proxyTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	if t.proxyErr != nil {
-		if req.Body != nil {
-			req.Body.Close()
-		}
-		return nil, t.proxyErr
-	}
-	if len(t.headers) == 0 || req.URL.Host != t.proxyHost {
-		return t.base.RoundTrip(req)
-	}
-	r := req.Clone(req.Context())
-	for k, v := range t.headers {
-		r.Header.Set(k, v)
-	}
-	return t.base.RoundTrip(r)
-}
-
 // failOpenTransport is an http.RoundTripper that retries against the
 // provider directly if the TOLVYN proxy is unreachable.
 type failOpenTransport struct {
@@ -301,8 +215,8 @@ func NewFailOpenTransport(proxyURL, providerURL, providerAPIKey, provider string
 			ResponseHeaderTimeout: 30 * time.Second,
 		},
 		tolvynProxyURL: proxyURL,
-		proxyHost:      hostOf(proxyURL),
-		proxyErr:       ValidateProxyURL(proxyURL),
+		proxyHost:      proxyurl.HostOf(proxyURL),
+		proxyErr:       proxyurl.Validate(proxyURL),
 		providerURL:    providerURL,
 		providerAPIKey: providerAPIKey,
 		provider:       provider,
@@ -391,6 +305,9 @@ func (t *failOpenTransport) RoundTrip(req *http.Request) (*http.Response, error)
 			req.Body.Close()
 		}
 		return nil, t.proxyErr
+	}
+	if err := proxyurl.CheckRequest(req); err != nil { // a per-request base URL is held to the rule too
+		return nil, err
 	}
 	getBody, err := replayableBody(req)
 	if err != nil {

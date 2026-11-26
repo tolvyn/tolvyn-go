@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/generative-ai-go/genai"
 	tolvyn "github.com/tolvyn/tolvyn-go"
+	"github.com/tolvyn/tolvyn-go/internal/proxyurl"
 	"google.golang.org/api/option"
 )
 
@@ -36,7 +37,7 @@ func NewClient(ctx context.Context, opts tolvyn.ClientOptions) (*Client, error) 
 	var httpClient *http.Client
 	if !opts.DisableFailOpen && opts.ProviderAPIKey != "" {
 		httpClient = &http.Client{
-			CheckRedirect: tolvyn.NoRedirect,
+			CheckRedirect: proxyurl.NoRedirect,
 			Transport: tolvyn.NewFailOpenTransport(
 				opts.ProxyURL,
 				providerDirectURL,
@@ -46,10 +47,10 @@ func NewClient(ctx context.Context, opts tolvyn.ClientOptions) (*Client, error) 
 			),
 		}
 	} else {
-		httpClient = &http.Client{Transport: tolvyn.NewProxyTransport(opts.ProxyURL, headers), CheckRedirect: tolvyn.NoRedirect}
+		httpClient = &http.Client{Transport: proxyurl.NewTransport(opts.ProxyURL, headers), CheckRedirect: proxyurl.NoRedirect}
 	}
 
-	if err := tolvyn.ValidateProxyURL(opts.ProxyURL); err != nil {
+	if err := proxyurl.Validate(opts.ProxyURL); err != nil {
 		return nil, err
 	}
 	client, err := genai.NewClient(ctx,

@@ -111,8 +111,8 @@ The direct request never carries `X-Tolvyn-*` headers, whether set on the client
 per request.
 
 The SDK does not follow redirects from the proxy URL: a redirect is returned as an error, and TOLVYN headers go only to the proxy's host, so your keys are not sent
-to another address. A base URL you pass per request (`option.WithBaseURL`) is used as given: the proxy URL rule above
-applies to the client's proxy URL, not to it.
+to another address. The proxy URL rule above holds for every URL a client sends to, including a base URL you pass per
+request (`option.WithBaseURL`). An `*http.Client` you build yourself around the provider SDK is yours to configure.
 
 ## Providers
 

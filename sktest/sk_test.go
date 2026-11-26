@@ -33,6 +33,7 @@ import (
 	tolvynanthropic "github.com/tolvyn/tolvyn-go/anthropic"
 	tolvyndeepseek "github.com/tolvyn/tolvyn-go/deepseek"
 	tolvyngoogle "github.com/tolvyn/tolvyn-go/google"
+	"github.com/tolvyn/tolvyn-go/internal/proxyurl"
 	tolvynopenai "github.com/tolvyn/tolvyn-go/openai"
 )
 
@@ -144,7 +145,7 @@ func TestTheTransportsSetTolvynHeadersOnlyOnTheProxysHost(t *testing.T) {
 	headers := map[string]string{"Authorization": "Bearer " + tlv, "X-Tolvyn-Team": "t"}
 	for name, tr := range map[string]http.RoundTripper{
 		"fail-open":  tolvyn.NewFailOpenTransport("http://127.0.0.1:1/v1/proxy/openai/", "https://api.openai.com/v1", pk, "openai", headers),
-		"proxy-only": tolvyn.NewProxyTransport("http://127.0.0.1:1/v1/proxy/openai/", headers),
+		"proxy-only": proxyurl.NewTransport("http://127.0.0.1:1/v1/proxy/openai/", headers),
 	} {
 		req, _ := http.NewRequest("GET", strings.Replace(o.URL, "127.0.0.1", "localhost", 1)+"/x", nil)
 		resp, err := tr.RoundTrip(req)

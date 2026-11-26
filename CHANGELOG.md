@@ -6,10 +6,11 @@
 
 - **A proxy URL must start with `https://`** (`http://` only for `localhost`, `127.0.0.1` and `::1`), and a proxy host
   other than `proxy.tolvyn.io` logs a one-time warning naming it. `google.NewClient` returns the error at once; the
-  other clients return it on each request (their constructors return no error). `tolvyn.ValidateProxyURL` is exported.
-- **Redirects are no longer followed** by any client the SDK builds (`tolvyn.NoRedirect`), and TOLVYN headers go only to
-  the proxy's host, with fail-open on or off (`tolvyn.NewProxyTransport` when it is off). A per-request
-  `option.WithBaseURL` is used as given.
+  other clients return it on each request (their constructors return no error). The rule holds for every URL a client
+  sends to, a base URL given per request (`option.WithBaseURL`) included.
+- **Redirects are no longer followed** by any client the SDK builds, and TOLVYN headers go only to the proxy's host,
+  with fail-open on or off.
+- **No new exported API:** the checks live in an internal package.
 - **A retry made by the provider SDK itself no longer goes direct**: an earlier attempt may have been sent. Only a
   request's first attempt fails open.
 
