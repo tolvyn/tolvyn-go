@@ -64,29 +64,21 @@ func HostOf(raw string) string {
 	return u.Host
 }
 
-// transport is the transport when fail-open is off: it refuses a proxy URL that breaks the rule, and sets TOLVYN
-// headers only on requests to the proxy's host.
+// transport is the transport when fail-open is off: it refuses any request URL that breaks the rule (the proxy URL's
+// own requests included), and sets TOLVYN headers only on requests to the proxy's host.
 type transport struct {
 	base      http.RoundTripper
 	proxyHost string
-	proxyErr  error
 	headers   map[string]string
 }
 
 // NewTransport returns the transport for a client with fail-open off.
 func NewTransport(proxyURL string, headers map[string]string) http.RoundTripper {
-	return &transport{base: http.DefaultTransport, proxyHost: HostOf(proxyURL), proxyErr: Validate(proxyURL),
-		headers: headers}
+	return &transport{base: http.DefaultTransport, proxyHost: HostOf(proxyURL), headers: headers}
 }
 
 func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
-	if t.proxyErr != nil {
-		if req.Body != nil {
-			req.Body.Close()
-		}
-		return nil, t.proxyErr
-	}
-	if err := CheckRequest(req); err != nil { // a per-request base URL is held to the rule too
+	if err := CheckRequest(req); err != nil { // the proxy URL, or a base URL given per request
 		return nil, err
 	}
 	if len(t.headers) == 0 || req.URL.Host != t.proxyHost {

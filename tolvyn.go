@@ -195,7 +195,6 @@ type failOpenTransport struct {
 	base           http.RoundTripper
 	tolvynProxyURL string
 	proxyHost      string
-	proxyErr       error
 	providerURL    string
 	providerAPIKey string
 	provider       string // "openai" | "anthropic" | "google" | "deepseek" — selects fallback auth header
@@ -216,7 +215,6 @@ func NewFailOpenTransport(proxyURL, providerURL, providerAPIKey, provider string
 		},
 		tolvynProxyURL: proxyURL,
 		proxyHost:      proxyurl.HostOf(proxyURL),
-		proxyErr:       proxyurl.Validate(proxyURL),
 		providerURL:    providerURL,
 		providerAPIKey: providerAPIKey,
 		provider:       provider,
@@ -300,13 +298,7 @@ func replayableBody(req *http.Request) (func() (io.ReadCloser, error), error) {
 }
 
 func (t *failOpenTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	if t.proxyErr != nil {
-		if req.Body != nil {
-			req.Body.Close()
-		}
-		return nil, t.proxyErr
-	}
-	if err := proxyurl.CheckRequest(req); err != nil { // a per-request base URL is held to the rule too
+	if err := proxyurl.CheckRequest(req); err != nil { // the proxy URL, or a base URL given per request
 		return nil, err
 	}
 	getBody, err := replayableBody(req)
