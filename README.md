@@ -104,7 +104,8 @@ carrying `X-Tolvyn-Unavailable: 1`.
 Fail-open does NOT trigger on: 4xx errors (auth failures, budget and rate limits, kill
 switch, bad requests), a plain 503 (the provider's own, passed through), or a timeout
 or reset after the request was sent — TOLVYN may already have forwarded it, and a
-direct retry would be a second, unmetered provider call.
+direct retry would be a second, unmetered provider call. A retry made by the provider SDK itself does not go direct
+either, since an earlier attempt may have been sent: only a request's first attempt fails open.
 
 The direct request never carries `X-Tolvyn-*` headers, whether set on the client or
 per request.

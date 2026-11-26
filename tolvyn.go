@@ -411,7 +411,9 @@ func (t *failOpenTransport) RoundTrip(req *http.Request) (*http.Response, error)
 
 	resp, err := t.base.RoundTrip(proxyReq)
 
-	if t.providerAPIKey == "" {
+	// Direct only on a first attempt: the provider SDK numbers its retries in X-Stainless-Retry-Count, and a retry may
+	// follow an attempt that was sent (D1: fail open only when the request was never sent).
+	if rc := req.Header.Get("X-Stainless-Retry-Count"); t.providerAPIKey == "" || (rc != "" && rc != "0") {
 		return resp, err
 	}
 	if err != nil {

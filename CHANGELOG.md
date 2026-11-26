@@ -10,6 +10,8 @@
 - **Redirects are no longer followed** by any client the SDK builds (`tolvyn.NoRedirect`), and TOLVYN headers go only to
   the proxy's host, with fail-open on or off (`tolvyn.NewProxyTransport` when it is off). A per-request
   `option.WithBaseURL` is used as given.
+- **A retry made by the provider SDK itself no longer goes direct**: an earlier attempt may have been sent. Only a
+  request's first attempt fails open.
 
 ## v0.1.5 — 2026-10-26
 
