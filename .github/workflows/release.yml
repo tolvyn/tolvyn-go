@@ -1,0 +1,46 @@
+# A GitHub release for each v* tag: the module source as a zip, SHA256SUMS, and a keyless cosign signature of the sums
+# (Sigstore, from this workflow's OIDC identity). The module's integrity for `go get` stays sum.golang.org's; this is
+# the release's provenance. The release job waits for the founder's approval in the `release` environment. Every
+# action is pinned to a full commit SHA (~/tolvyn-builds/SK-scripts/pin-actions.sh resolves the tags in the comments).
+name: release
+on:
+  push:
+    tags: ['v*']
+permissions: {}
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@PIN_ME # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@PIN_ME # v5.3.0
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      - run: go test ./...
+  release:
+    needs: test
+    runs-on: ubuntu-24.04
+    environment: release
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@PIN_ME # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: sigstore/cosign-installer@PIN_ME # v3.8.0
+      - name: Source zip, sums and signature
+        run: |
+          git archive --format=zip --prefix="tolvyn-go-${GITHUB_REF_NAME}/" -o "tolvyn-go-${GITHUB_REF_NAME}.zip" "$GITHUB_REF_NAME"
+          sha256sum "tolvyn-go-${GITHUB_REF_NAME}.zip" > SHA256SUMS
+          cosign sign-blob --yes --bundle SHA256SUMS.sigstore.json SHA256SUMS
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" --notes "See CHANGELOG.md." \
+            "tolvyn-go-${GITHUB_REF_NAME}.zip" SHA256SUMS SHA256SUMS.sigstore.json
