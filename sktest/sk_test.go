@@ -19,6 +19,8 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -354,5 +356,21 @@ func TestAPerRequestBaseURLFollowsTheRule(t *testing.T) {
 				t.Errorf("%s, fail-open %v: the per-request base URL got %d request(s)", name, fo, n)
 			}
 		}
+	}
+}
+
+// The module's Version constant is the version the CHANGELOG is about to release, and the release workflow refuses a
+// tag that is not "v" + Version: v0.1.6 must not ship saying 0.1.5.
+func TestVersionIsTheChangelogsAndTheWorkflowChecksTheTag(t *testing.T) {
+	src, _ := os.ReadFile("../tolvyn.go")
+	log, _ := os.ReadFile("../CHANGELOG.md")
+	wf, _ := os.ReadFile("../.github/workflows/release.yml")
+	v := regexp.MustCompile(`(?m)^const Version = "([^"]+)"`).FindSubmatch(src)
+	top := regexp.MustCompile(`(?m)^## v?([0-9][0-9.]*)`).FindSubmatch(log)
+	if v == nil || top == nil || string(v[1]) != string(top[1]) {
+		t.Errorf("Version %q, CHANGELOG's top %q", v, top)
+	}
+	if !strings.Contains(string(wf), `test "v$(sed -n 's/^const Version = "\(.*\)"$/\1/p' tolvyn.go)" = "$GITHUB_REF_NAME"`) {
+		t.Errorf("the release workflow does not check the tag against Version")
 	}
 }
