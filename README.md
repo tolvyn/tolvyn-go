@@ -58,7 +58,7 @@ resp, err := client.Chat.Completions.New(ctx, oai.ChatCompletionNewParams{
 | `ANTHROPIC_API_KEY` | For fail-open | Anthropic key used when TOLVYN is unreachable |
 | `GOOGLE_API_KEY` | For fail-open | Google key used when TOLVYN is unreachable |
 | `DEEPSEEK_API_KEY` | For fail-open | DeepSeek key used when TOLVYN is unreachable |
-| `TOLVYN_PROXY_URL` | No | Override proxy URL (default: https://proxy.tolvyn.io/v1/proxy/{provider}/) |
+| `TOLVYN_PROXY_URL` | No | Override the proxy URL. It must start with `https://`; `http://` is accepted only for `localhost`, `127.0.0.1` and `[::1]`. A host other than `proxy.tolvyn.io` logs a one-time warning, because your TOLVYN key and your prompts are sent to it. Default: `https://proxy.tolvyn.io/v1/proxy/{provider}/`. |
 
 ## Attribution headers
 
@@ -108,6 +108,9 @@ direct retry would be a second, unmetered provider call.
 
 The direct request never carries `X-Tolvyn-*` headers, whether set on the client or
 per request.
+
+The SDK does not follow redirects from the proxy URL: a redirect is returned as an error, and TOLVYN headers go only to the proxy's host, so your keys are not sent
+to another address.
 
 ## Providers
 

@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.1.6 — unreleased
+
+### Security
+
+- **A proxy URL must start with `https://`** (`http://` only for `localhost`, `127.0.0.1` and `::1`), and a proxy host
+  other than `proxy.tolvyn.io` logs a one-time warning naming it. `google.NewClient` returns the error at once; the
+  other clients return it on each request (their constructors return no error). `tolvyn.ValidateProxyURL` is exported.
+- **Redirects are no longer followed** by any client the SDK builds (`tolvyn.NoRedirect`), and TOLVYN headers go only to
+  the proxy's host, with fail-open on or off (`tolvyn.NewProxyTransport` when it is off).
+
 ## v0.1.5 — 2026-10-26
 
 ### Fail-open: changed behaviour
