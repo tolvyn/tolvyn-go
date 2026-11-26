@@ -20,6 +20,8 @@ jobs:
       - uses: actions/setup-go@PIN_ME # v5.3.0
         with:
           go-version-file: go.mod
+      - name: The tag is the module's Version
+        run: test "v$(sed -n 's/^const Version = "\(.*\)"$/\1/p' tolvyn.go)" = "$GITHUB_REF_NAME"
       - run: go vet ./...
       - run: go test ./...
   release:

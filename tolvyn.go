@@ -28,7 +28,7 @@ import (
 	"github.com/tolvyn/tolvyn-go/internal/proxyurl"
 )
 
-const Version = "0.1.5"
+const Version = "0.1.6"
 
 // ClientOptions configures a TOLVYN SDK client.
 // All fields are optional except TolvynAPIKey (or TOLVYN_API_KEY env var).
