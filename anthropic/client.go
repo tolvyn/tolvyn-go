@@ -32,6 +32,7 @@ func NewClient(opts tolvyn.ClientOptions) *Client {
 	var httpClient *http.Client
 	if !opts.DisableFailOpen && opts.ProviderAPIKey != "" {
 		httpClient = &http.Client{
+			CheckRedirect: tolvyn.NoRedirect,
 			Transport: tolvyn.NewFailOpenTransport(
 				opts.ProxyURL,
 				providerDirectURL,
@@ -41,7 +42,7 @@ func NewClient(opts tolvyn.ClientOptions) *Client {
 			),
 		}
 	} else {
-		httpClient = &http.Client{}
+		httpClient = &http.Client{Transport: tolvyn.NewProxyTransport(opts.ProxyURL, nil), CheckRedirect: tolvyn.NoRedirect}
 	}
 
 	anthropicOpts := []option.RequestOption{

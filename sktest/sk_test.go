@@ -135,8 +135,8 @@ func TestTheTransportsSetTolvynHeadersOnlyOnTheProxysHost(t *testing.T) {
 	defer o.Close()
 	headers := map[string]string{"Authorization": "Bearer " + tlv, "X-Tolvyn-Team": "t"}
 	for name, tr := range map[string]http.RoundTripper{
-		"fail-open":   tolvyn.NewFailOpenTransport("http://127.0.0.1:1/v1/proxy/openai/", "https://api.openai.com/v1", pk, "openai", headers),
-		"proxy-only":  tolvyn.NewProxyTransport("http://127.0.0.1:1/v1/proxy/openai/", headers),
+		"fail-open":  tolvyn.NewFailOpenTransport("http://127.0.0.1:1/v1/proxy/openai/", "https://api.openai.com/v1", pk, "openai", headers),
+		"proxy-only": tolvyn.NewProxyTransport("http://127.0.0.1:1/v1/proxy/openai/", headers),
 	} {
 		req, _ := http.NewRequest("GET", strings.Replace(o.URL, "127.0.0.1", "localhost", 1)+"/x", nil)
 		resp, err := tr.RoundTrip(req)

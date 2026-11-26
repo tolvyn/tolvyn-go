@@ -36,6 +36,7 @@ func NewClient(ctx context.Context, opts tolvyn.ClientOptions) (*Client, error) 
 	var httpClient *http.Client
 	if !opts.DisableFailOpen && opts.ProviderAPIKey != "" {
 		httpClient = &http.Client{
+			CheckRedirect: tolvyn.NoRedirect,
 			Transport: tolvyn.NewFailOpenTransport(
 				opts.ProxyURL,
 				providerDirectURL,
@@ -45,14 +46,12 @@ func NewClient(ctx context.Context, opts tolvyn.ClientOptions) (*Client, error) 
 			),
 		}
 	} else {
-		httpClient = &http.Client{
-			Transport: &headerInjectTransport{
-				base:    http.DefaultTransport,
-				headers: headers,
-			},
-		}
+		httpClient = &http.Client{Transport: tolvyn.NewProxyTransport(opts.ProxyURL, headers), CheckRedirect: tolvyn.NoRedirect}
 	}
 
+	if err := tolvyn.ValidateProxyURL(opts.ProxyURL); err != nil {
+		return nil, err
+	}
 	client, err := genai.NewClient(ctx,
 		option.WithAPIKey(opts.TolvynAPIKey),
 		option.WithHTTPClient(httpClient),
@@ -70,18 +69,4 @@ func NewClient(ctx context.Context, opts tolvyn.ClientOptions) (*Client, error) 
 // Optional: GOOGLE_API_KEY (for fail-open), TOLVYN_PROXY_URL
 func NewClientFromEnv(ctx context.Context) (*Client, error) {
 	return NewClient(ctx, tolvyn.ClientOptions{})
-}
-
-// headerInjectTransport injects TOLVYN attribution headers on every request.
-type headerInjectTransport struct {
-	base    http.RoundTripper
-	headers map[string]string
-}
-
-func (t *headerInjectTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	r := req.Clone(req.Context())
-	for k, v := range t.headers {
-		r.Header.Set(k, v)
-	}
-	return t.base.RoundTrip(r)
 }
