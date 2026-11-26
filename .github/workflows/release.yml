@@ -1,6 +1,6 @@
 # A GitHub release for each v* tag: the module source as a zip, SHA256SUMS, and a keyless cosign signature of the sums
 # (Sigstore, from this workflow's OIDC identity). The module's integrity for `go get` stays sum.golang.org's; this is
-# the release's provenance. The release job waits for the founder's approval in the `release` environment. Every
+# the release's provenance. The release job waits for a maintainer's approval in the `release` environment. Every
 # action is pinned to a full commit SHA, the release tag it was resolved from
 # in the comment beside it.
 name: release
