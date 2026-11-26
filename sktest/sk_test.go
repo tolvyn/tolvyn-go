@@ -12,6 +12,7 @@ import (
 	"context"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -194,5 +195,40 @@ func TestAHostOtherThanTolvynsIsLoggedOnce(t *testing.T) {
 	}
 	if strings.Contains(buf.String(), "proxy.tolvyn.io, not") {
 		t.Errorf("the default host warned: %q", buf.String())
+	}
+}
+
+// D1: the provider SDKs retry a failed request (X-Stainless-Retry-Count 1, 2, ...), and a retry may follow an attempt
+// that was sent. Only a first attempt goes direct.
+func TestARetryOfASentRequestNeverGoesDirect(t *testing.T) {
+	provider := &rec{}
+	p := httptest.NewServer(provider.wrap(ok))
+	defer p.Close()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	refused := "http://" + l.Addr().String()
+	l.Close()
+	tr := tolvyn.NewFailOpenTransport(refused+"/v1/proxy/openai/", p.URL+"/v1/", pk, "openai", nil)
+	for _, c := range []struct {
+		count  string
+		direct int
+	}{{"1", 0}, {"2", 0}, {"0", 1}, {"", 1}} {
+		before := provider.n()
+		req, _ := http.NewRequest("POST", refused+"/v1/proxy/openai/chat/completions", strings.NewReader("{}"))
+		if c.count != "" {
+			req.Header.Set("X-Stainless-Retry-Count", c.count)
+		}
+		resp, err := tr.RoundTrip(req)
+		if resp != nil {
+			resp.Body.Close()
+		}
+		if got := provider.n() - before; got != c.direct {
+			t.Errorf("retry count %q: %d direct request(s), want %d", c.count, got, c.direct)
+		}
+		if c.direct == 0 && err == nil {
+			t.Errorf("retry count %q: no error", c.count)
+		}
 	}
 }
