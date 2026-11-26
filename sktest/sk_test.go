@@ -154,9 +154,15 @@ func TestTheTransportsSetTolvynHeadersOnlyOnTheProxysHost(t *testing.T) {
 
 func TestAProxyURLThatIsNotHttpsIsRefused(t *testing.T) {
 	for name, call := range calls {
-		if err := call("http://example.com", false); err == nil || !strings.Contains(err.Error(), "https://") {
-			t.Errorf("%s: http://example.com accepted (err=%v)", name, err)
+		for _, fo := range []bool{true, false} {
+			if err := call("http://example.com", fo); err == nil || !strings.Contains(err.Error(), "https://") {
+				t.Errorf("%s, fail-open %v: http://example.com accepted (err=%v)", name, fo, err)
+			}
 		}
+	}
+	// google.NewClient refuses at once, before any request.
+	if _, err := tolvyngoogle.NewClient(ctx, opts("http://example.com/v1/proxy/google/", false)); err == nil {
+		t.Errorf("google.NewClient accepted http://example.com")
 	}
 	t.Setenv("TOLVYN_PROXY_URL", "http://203.0.113.9/v1/proxy/openai/")
 	_, err := tolvynopenai.NewClient(tolvyn.ClientOptions{TolvynAPIKey: tlv, DisableFailOpen: true}).Chat.Completions.New(ctx, chatParams())
