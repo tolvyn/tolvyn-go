@@ -10,18 +10,25 @@ package sktest
 import (
 	"bytes"
 	"context"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"io"
+	"io/fs"
 	"log"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
 
 	sdk "github.com/anthropics/anthropic-sdk-go"
+	sdkopt "github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/google/generative-ai-go/genai"
 	oai "github.com/openai/openai-go"
+	oaiopt "github.com/openai/openai-go/option"
 	tolvyn "github.com/tolvyn/tolvyn-go"
 	tolvynanthropic "github.com/tolvyn/tolvyn-go/anthropic"
 	tolvyndeepseek "github.com/tolvyn/tolvyn-go/deepseek"
@@ -229,6 +236,122 @@ func TestARetryOfASentRequestNeverGoesDirect(t *testing.T) {
 		}
 		if c.direct == 0 && err == nil {
 			t.Errorf("retry count %q: no error", c.count)
+		}
+	}
+}
+
+// Decision 1 (Gate 2): v0.1.6 exports nothing v0.1.5 did not. The redirect refusal, the proxy transport and the URL
+// rule live in an internal package. The list is v0.1.5's exported API, read from ecbe2c9.
+func TestNoNewExportedAPI(t *testing.T) {
+	want := map[string][]string{
+		"..":           {"ClientOptions", "ClientOptions.Defaults", "ClientOptions.TolvynHeaders", "IsProxyError", "IsTolvynUnavailable", "NewFailOpenTransport", "ProxyNotReached", "ShouldNotFailOpen", "TolvynUnavailableHeader", "Version"},
+		"../openai":    {"Client", "NewClient", "NewClientFromEnv"},
+		"../anthropic": {"Client", "NewClient", "NewClientFromEnv"},
+		"../deepseek":  {"Client", "NewClient", "NewClientFromEnv"},
+		"../google":    {"Client", "NewClient", "NewClientFromEnv"},
+	}
+	for dir, names := range want {
+		got := exportedNames(t, dir)
+		if strings.Join(got, " ") != strings.Join(names, " ") {
+			t.Errorf("%s exports %v, want %v", dir, got, names)
+		}
+	}
+}
+
+func exportedNames(t *testing.T, dir string) []string {
+	t.Helper()
+	pkgs, err := parser.ParseDir(token.NewFileSet(), dir, func(fi fs.FileInfo) bool { return !strings.HasSuffix(fi.Name(), "_test.go") }, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, p := range pkgs {
+		for _, f := range p.Files {
+			for _, d := range f.Decls {
+				switch d := d.(type) {
+				case *ast.FuncDecl:
+					if !d.Name.IsExported() {
+						continue
+					}
+					if d.Recv == nil {
+						names = append(names, d.Name.Name)
+						continue
+					}
+					rt := d.Recv.List[0].Type
+					if s, ok := rt.(*ast.StarExpr); ok {
+						rt = s.X
+					}
+					if id, ok := rt.(*ast.Ident); ok && id.IsExported() {
+						names = append(names, id.Name+"."+d.Name.Name)
+					}
+				case *ast.GenDecl:
+					for _, s := range d.Specs {
+						switch s := s.(type) {
+						case *ast.TypeSpec:
+							if s.Name.IsExported() {
+								names = append(names, s.Name.Name)
+							}
+						case *ast.ValueSpec:
+							for _, n := range s.Names {
+								if n.IsExported() {
+									names = append(names, n.Name)
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
+// Decision 2 (Gate 2): the URL rule holds for every URL a client sends to, a per-request option.WithBaseURL included.
+// 127.0.0.2 is this machine but not one of the names the rule accepts over http, so a request there is refused, and
+// the stand-in listening there shows whether anything arrived.
+func TestAPerRequestBaseURLFollowsTheRule(t *testing.T) {
+	other := &rec{}
+	l, err := net.Listen("tcp", "127.0.0.2:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	o := httptest.NewUnstartedServer(other.wrap(ok))
+	o.Listener.Close()
+	o.Listener = l
+	o.Start()
+	defer o.Close()
+	proxy := httptest.NewServer((&rec{}).wrap(ok))
+	defer proxy.Close()
+	for _, fo := range []bool{true, false} {
+		calls := map[string]func() error{
+			"openai": func() error {
+				_, err := tolvynopenai.NewClient(opts(proxy.URL+"/v1/proxy/openai/", fo)).Chat.Completions.New(ctx, chatParams(),
+					oaiopt.WithBaseURL(o.URL+"/v1/"), oaiopt.WithMaxRetries(0))
+				return err
+			},
+			"deepseek": func() error {
+				_, err := tolvyndeepseek.NewClient(opts(proxy.URL+"/v1/proxy/deepseek/", fo)).Chat.Completions.New(ctx, chatParams(),
+					oaiopt.WithBaseURL(o.URL+"/v1/"), oaiopt.WithMaxRetries(0))
+				return err
+			},
+			"anthropic": func() error {
+				_, err := tolvynanthropic.NewClient(opts(proxy.URL+"/v1/proxy/anthropic/", fo)).Messages.New(ctx, sdk.MessageNewParams{
+					Model: sdk.F(sdk.ModelClaude3_5HaikuLatest), MaxTokens: sdk.F(int64(1)),
+					Messages: sdk.F([]sdk.MessageParam{sdk.NewUserMessage(sdk.NewTextBlock("hi"))}),
+				}, sdkopt.WithBaseURL(o.URL+"/"), sdkopt.WithMaxRetries(0))
+				return err
+			},
+		}
+		for name, call := range calls {
+			before := other.n()
+			err := call()
+			if err == nil || !strings.Contains(err.Error(), "must start with https://") {
+				t.Errorf("%s, fail-open %v: err=%v", name, fo, err)
+			}
+			if n := other.n() - before; n != 0 {
+				t.Errorf("%s, fail-open %v: the per-request base URL got %d request(s)", name, fo, n)
+			}
 		}
 	}
 }
