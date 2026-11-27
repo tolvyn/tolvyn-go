@@ -14,12 +14,13 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@PIN_ME # v5.0.0
+      - uses: actions/checkout@PIN_ME # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-go@PIN_ME # v6.0.0
+      - uses: actions/setup-go@PIN_ME # v7.1.0
         with:
           go-version-file: go.mod
+          cache: false
       - name: The tag is the module's Version
         run: test "v$(sed -n 's/^const Version = "\(.*\)"$/\1/p' tolvyn.go)" = "$GITHUB_REF_NAME"
       - run: go vet ./...
@@ -32,15 +33,21 @@ jobs:
       contents: write
       id-token: write
     steps:
-      - uses: actions/checkout@PIN_ME # v5.0.0
+      - uses: actions/checkout@PIN_ME # v7.0.1
         with:
           persist-credentials: false
-      - uses: sigstore/cosign-installer@PIN_ME # v3.8.0
+      - uses: sigstore/cosign-installer@PIN_ME # v4.1.4
       - name: Source zip, sums and signature
         run: |
           git archive --format=zip --prefix="tolvyn-go-${GITHUB_REF_NAME}/" -o "tolvyn-go-${GITHUB_REF_NAME}.zip" "$GITHUB_REF_NAME"
           sha256sum "tolvyn-go-${GITHUB_REF_NAME}.zip" > SHA256SUMS
           cosign sign-blob --yes --bundle SHA256SUMS.sigstore.json SHA256SUMS
+          # cosign v3 (cosign-installer v4) writes Sigstore's new bundle format; check that it did, and that the bundle
+          # verifies with the identity install.sh and the README give customers, before anything is published.
+          grep -q 'application/vnd.dev.sigstore.bundle' SHA256SUMS.sigstore.json
+          cosign verify-blob SHA256SUMS --bundle SHA256SUMS.sigstore.json \
+            --certificate-identity "https://github.com/$GITHUB_REPOSITORY/.github/workflows/release.yml@$GITHUB_REF" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com
       - name: GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
