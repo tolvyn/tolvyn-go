@@ -20,10 +20,10 @@ jobs:
     permissions:
       contents: read # to check out the tagged source
     steps:
-      - uses: actions/checkout@PIN_ME # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-go@PIN_ME # v7.1.0
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: go.mod
           cache: false
@@ -40,10 +40,10 @@ jobs:
       contents: write # to check out the source, and create the GitHub release with its files
       id-token: write # for cosign's keyless signature (Sigstore, from this workflow's OIDC identity)
     steps:
-      - uses: actions/checkout@PIN_ME # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: sigstore/cosign-installer@PIN_ME # v4.1.4
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
       - name: Source zip, sums and signature
         run: |
           git archive --format=zip --prefix="tolvyn-go-${GITHUB_REF_NAME}/" -o "tolvyn-go-${GITHUB_REF_NAME}.zip" "$GITHUB_REF_NAME"
